@@ -1,97 +1,140 @@
-"""Camera preview window with eye tracking overlay drawn on the live frame."""
+"""Jarvis-style HUD — draws hand skeleton + status overlay on camera frame."""
 
 import cv2
 import numpy as np
+from core.hand_tracker import HAND_CONNECTIONS, FINGERTIPS, INDEX_TIP, THUMB_TIP
+
+# Jarvis color palette
+_CYAN    = (255, 220, 0)     # BGR cyan-gold
+_BLUE    = (255, 160, 20)    # BGR bright blue
+_GREEN   = (80,  255, 120)   # BGR green
+_RED     = (60,  60,  255)   # BGR red
+_WHITE   = (240, 240, 240)
+_DIM     = (80,  80,  80)
+_ORANGE  = (0,   160, 255)   # BGR orange
+_BG      = (10,  10,  15)
 
 
-def draw_tracking(frame, face_result, ear_l, ear_r, mode, fps, last_event, gaze_screen=None, screen_w=1920, screen_h=1080):
-    """Draw iris dots, EAR bars, gaze info and status onto frame. Returns annotated frame."""
+def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w=1920, screen_h=1080):
     if frame is None:
         return None
 
-    out = frame.copy()
+    out = cv2.flip(frame.copy(), 1)  # mirror like selfie
     h, w = out.shape[:2]
 
-    # --- Mirror so it feels like a selfie ---
-    out = cv2.flip(out, 1)
+    # Dark vignette overlay for Jarvis feel
+    _vignette(out)
 
-    if face_result is not None:
-        fw, fh = face_result.frame_size
+    if hand_result is not None:
+        fw, fh = hand_result.frame_size
 
-        def px_mirror(pt):
-            """Flip x to match mirrored frame."""
+        def m(pt):
+            """Mirror + scale landmark to preview frame."""
             x, y = pt
-            return (int(w - x * w / fw), int(y * fh / fh * h / fh))
+            return (int((1.0 - x / fw) * w), int(y / fh * h))
 
-        # Draw iris circles
-        rx, ry = face_result.iris_right
-        lx, ly = face_result.iris_left
-        mrx = int(w - rx * w / fw)
-        mry = int(ry * h / fh)
-        mlx = int(w - lx * w / fw)
-        mly = int(ly * h / fh)
+        lms_m = [m(lm) for lm in hand_result.landmarks_px]
 
-        r_color = (0, 255, 100) if ear_r > 0.20 else (0, 80, 255)
-        l_color = (0, 255, 100) if ear_l > 0.20 else (0, 80, 255)
-        cv2.circle(out, (mrx, mry), 8, r_color, 2)
-        cv2.circle(out, (mrx, mry), 2, (255, 255, 255), -1)
-        cv2.circle(out, (mlx, mly), 8, l_color, 2)
-        cv2.circle(out, (mlx, mly), 2, (255, 255, 255), -1)
+        # Draw skeleton connections
+        for (a, b) in HAND_CONNECTIONS:
+            pa, pb = lms_m[a], lms_m[b]
+            cv2.line(out, pa, pb, _BLUE, 1, cv2.LINE_AA)
 
-        # EAR bars on the sides
-        _draw_ear_bar(out, ear_r, x=20, y=60, label="R")
-        _draw_ear_bar(out, ear_l, x=w - 50, y=60, label="L")
+        # Glow on connections (second thicker pass, dimmer)
+        for (a, b) in HAND_CONNECTIONS:
+            pa, pb = lms_m[a], lms_m[b]
+            cv2.line(out, pa, pb, (60, 40, 5), 4, cv2.LINE_AA)
+            cv2.line(out, pa, pb, _BLUE, 1, cv2.LINE_AA)
 
-        # Draw key face landmarks (nose tip, mouth corners)
-        for idx in [1, 61, 291]:
-            if idx < len(face_result.landmarks_px):
-                lm = face_result.landmarks_px[idx]
-                mx = int(w - lm[0] * w / fw)
-                my = int(lm[1] * h / fh)
-                cv2.circle(out, (mx, my), 3, (100, 200, 255), -1)
+        # Draw all landmarks
+        for i, pt in enumerate(lms_m):
+            color = _CYAN if i in FINGERTIPS else _BLUE
+            radius = 6 if i in FINGERTIPS else 3
+            cv2.circle(out, pt, radius + 2, (int(color[0]*0.3), int(color[1]*0.3), int(color[2]*0.3)), -1)
+            cv2.circle(out, pt, radius, color, -1, cv2.LINE_AA)
 
-    # --- Gaze mini-map (bottom-right corner) ---
-    if gaze_screen is not None:
-        _draw_minimap(out, gaze_screen, screen_w, screen_h, w, h)
+        # Highlight index tip and thumb tip
+        cv2.circle(out, lms_m[INDEX_TIP], 9, _GREEN, 2, cv2.LINE_AA)
+        cv2.circle(out, lms_m[THUMB_TIP], 8, _ORANGE, 2, cv2.LINE_AA)
 
-    # --- HUD text ---
-    blink_hint = "Blink L=click  R=right-click  Both=dbl"
-    gesture_hint = "Nod=Enter  Shake=Esc  Tilt=Scroll"
-    voice_hint = "Say: 'type hello' | 'click' | 'scroll up' | 'quit'"
+        # Pinch line
+        dist_sq = (lms_m[INDEX_TIP][0]-lms_m[THUMB_TIP][0])**2 + (lms_m[INDEX_TIP][1]-lms_m[THUMB_TIP][1])**2
+        pinch_color = _RED if dist_sq < 1800 else _DIM
+        cv2.line(out, lms_m[INDEX_TIP], lms_m[THUMB_TIP], pinch_color, 1, cv2.LINE_AA)
 
-    cv2.rectangle(out, (0, h - 90), (w, h), (0, 0, 0), -1)
-    cv2.putText(out, blink_hint,  (10, h - 68), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 255, 180), 1)
-    cv2.putText(out, gesture_hint,(10, h - 48), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 220, 255), 1)
-    cv2.putText(out, voice_hint,  (10, h - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 220, 160), 1)
+    # --- Top status bar ---
+    cv2.rectangle(out, (0, 0), (w, 36), (5, 5, 10), -1)
+    _scanline(out, 35)
+    mode_color = _GREEN if mode == "tracking" else (_RED if mode == "paused" else _ORANGE)
+    cv2.putText(out, f"JARVIS  |  {mode.upper()}  |  {fps:.0f} FPS  |  {gesture}",
+                (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.52, mode_color, 1, cv2.LINE_AA)
 
-    # Status bar top
-    cv2.rectangle(out, (0, 0), (w, 32), (20, 20, 20), -1)
-    status = f"  mode={mode}   fps={fps:.0f}   EAR L={ear_l:.2f} R={ear_r:.2f}   {last_event}"
-    cv2.putText(out, status, (6, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+    # --- Gaze minimap ---
+    if screen_pos is not None:
+        _draw_minimap(out, screen_pos, screen_w, screen_h, w, h)
+
+    # --- Bottom hint bar ---
+    cv2.rectangle(out, (0, h - 76), (w, h), (5, 5, 10), -1)
+    _scanline(out, h - 76)
+    hints = [
+        ("INDEX POINT", "→ move cursor", _CYAN),
+        ("PINCH",       "→ click",       _GREEN),
+        ("PINCH HOLD",  "→ drag",        _ORANGE),
+        ("PEACE PINCH", "→ right click", _BLUE),
+        ("3 FINGERS",   "→ scroll",      _WHITE),
+        ("FIST",        "→ pause",       _RED),
+    ]
+    x = 8
+    for label, action, color in hints:
+        cv2.putText(out, label, (x, h - 52), cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA)
+        cv2.putText(out, action, (x, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.35, _DIM, 1, cv2.LINE_AA)
+        x += 110
+
+    cv2.putText(out, "SAY: 'type ...' | 'click' | 'scroll up' | 'copy' | 'quit'",
+                (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 200, 120), 1, cv2.LINE_AA)
 
     return out
 
 
-def _draw_ear_bar(frame, ear, x, y, label):
-    bar_h = 80
-    filled = int(bar_h * min(ear / 0.4, 1.0))
-    color = (0, 200, 80) if ear > 0.20 else (0, 60, 200)
-    cv2.rectangle(frame, (x, y), (x + 18, y + bar_h), (60, 60, 60), -1)
-    cv2.rectangle(frame, (x, y + bar_h - filled), (x + 18, y + bar_h), color, -1)
-    cv2.putText(frame, label, (x + 2, y + bar_h + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
-    cv2.putText(frame, f"{ear:.2f}", (x - 4, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
+def _vignette(img):
+    h, w = img.shape[:2]
+    # Darken corners for cinematic look
+    mask = np.zeros((h, w), dtype=np.float32)
+    cx, cy = w // 2, h // 2
+    for y in range(0, h, 4):
+        for x in range(0, w, 4):
+            d = ((x - cx)**2 / (cx**2) + (y - cy)**2 / (cy**2)) ** 0.5
+            mask[y, y:y+4] = min(1.0, d * 0.6)
+    # Fast approximation: just darken border strip
+    border = 40
+    img[:border, :] = (img[:border, :] * 0.4).astype(np.uint8)
+    img[-border:, :] = (img[-border:, :] * 0.4).astype(np.uint8)
+    img[:, :border] = (img[:, :border] * 0.4).astype(np.uint8)
+    img[:, -border:] = (img[:, -border:] * 0.4).astype(np.uint8)
 
 
-def _draw_minimap(frame, gaze_screen, sw, sh, fw, fh):
-    """Small screen map in bottom-right showing gaze dot."""
-    mw, mh = 120, 68
-    mx0, my0 = fw - mw - 10, fh - mh - 100
-    cv2.rectangle(frame, (mx0, my0), (mx0 + mw, my0 + mh), (50, 50, 50), -1)
-    cv2.rectangle(frame, (mx0, my0), (mx0 + mw, my0 + mh), (120, 120, 120), 1)
-    # gaze dot
-    gx = int(mx0 + gaze_screen[0] / sw * mw)
-    gy = int(my0 + gaze_screen[1] / sh * mh)
-    gx = max(mx0 + 4, min(mx0 + mw - 4, gx))
-    gy = max(my0 + 4, min(my0 + mh - 4, gy))
-    cv2.circle(frame, (gx, gy), 5, (0, 220, 255), -1)
-    cv2.putText(frame, "gaze", (mx0 + 4, my0 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 1)
+def _scanline(img, y):
+    """Draw a subtle cyan scan line."""
+    cv2.line(img, (0, y), (img.shape[1], y), (80, 60, 0), 1)
+
+
+def _draw_minimap(frame, screen_pos, sw, sh, fw, fh):
+    mw, mh = 130, 74
+    mx0, my0 = fw - mw - 8, fh - mh - 84
+    # Background
+    cv2.rectangle(frame, (mx0 - 1, my0 - 1), (mx0 + mw + 1, my0 + mh + 1), _BLUE, 1)
+    cv2.rectangle(frame, (mx0, my0), (mx0 + mw, my0 + mh), (8, 8, 15), -1)
+    # Grid lines
+    for gx in [mx0 + mw//3, mx0 + 2*mw//3]:
+        cv2.line(frame, (gx, my0), (gx, my0 + mh), (30, 25, 5), 1)
+    for gy in [my0 + mh//2]:
+        cv2.line(frame, (mx0, gy), (mx0 + mw, gy), (30, 25, 5), 1)
+    # Gaze dot
+    gx = int(mx0 + screen_pos[0] / sw * mw)
+    gy = int(my0 + screen_pos[1] / sh * mh)
+    gx = max(mx0 + 3, min(mx0 + mw - 3, gx))
+    gy = max(my0 + 3, min(my0 + mh - 3, gy))
+    cv2.circle(frame, (gx, gy), 5, _CYAN, -1, cv2.LINE_AA)
+    cv2.circle(frame, (gx, gy), 8, _CYAN, 1, cv2.LINE_AA)
+    cv2.putText(frame, "CURSOR", (mx0 + 4, my0 - 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.3, _BLUE, 1, cv2.LINE_AA)
