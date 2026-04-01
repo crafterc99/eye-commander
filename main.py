@@ -12,6 +12,7 @@ from core.hand_tracker import HandTracker
 from core.hand_cursor import HandCursor
 from core.gesture_detector import GestureDetector
 from core.app_detector import get_active_app
+from core.gaze_cursor import GazeCursor
 from control import cursor, keyboard
 from voice.listener import VoiceListener
 from voice.commands import CommandDispatcher
@@ -48,6 +49,10 @@ class EyeCommander:
         )
         self._dict_status  = "idle"   # idle | active | composing
         self._partial_text = ""       # live partial from Wispr
+
+        # Eye gaze cursor (GazeTracking)
+        self._gaze_cursor  = GazeCursor(self._screen_w, self._screen_h)
+        self._gaze_overlay = None          # created after cv2.namedWindow
 
         # Active app (polled every ~30 frames)
         self._active_app   = ""
@@ -155,6 +160,9 @@ class EyeCommander:
         print("  Fist (hold 0.45s)    →  pause tracking")
         print("  Open palm (8 frames) →  resume")
         print()
+        print("  Eye gaze             →  moves cursor (no clicks) + glow overlay")
+        print("                          look straight ahead for 1.5s to calibrate")
+        print()
         print("  Voice: 'type'        →  compose mode (say, then 'submit'/'cancel')")
         print("         'dictate'     →  live dictation (types as you speak)")
         print("         'click' 'copy' 'paste' 'scroll up' 'quit'")
@@ -171,6 +179,13 @@ class EyeCommander:
         cv2.namedWindow(PREVIEW_WIN, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(PREVIEW_WIN, 720, 460)
 
+        # Gaze overlay — must init AFTER cv2.namedWindow (which starts NSApp)
+        try:
+            from ui.gaze_overlay import GazeOverlay
+            self._gaze_overlay = GazeOverlay()
+        except Exception as e:
+            print(f"[gaze_overlay] Disabled: {e}")
+
         self._running = True
 
         try:
@@ -182,6 +197,22 @@ class EyeCommander:
                     continue
 
                 hand = self._hand_tracker.process(frame)
+
+                # Gaze tracking (background thread — submit frame, read latest)
+                self._gaze_cursor.submit_frame(frame)
+                gaze_pos = self._gaze_cursor.latest_pos()
+                if gaze_pos and config.GAZE_CURSOR_ENABLED:
+                    gx, gy = int(gaze_pos[0]), int(gaze_pos[1])
+                    # Move mouse to gaze position (no clicks — read-only)
+                    cursor.move(gx, gy)
+                    if self._gaze_overlay:
+                        self._gaze_overlay.update(gx, gy)
+                elif self._gaze_overlay:
+                    self._gaze_overlay.hide()
+
+                # Pump Cocoa run loop so overlay renders
+                if self._gaze_overlay:
+                    self._gaze_overlay.tick()
 
                 # FPS
                 now = time.time()
@@ -246,6 +277,8 @@ class EyeCommander:
     def _shutdown(self):
         print("\n[JARVIS] Shutting down...")
         cv2.destroyAllWindows()
+        if self._gaze_overlay:
+            self._gaze_overlay.close()
         self._camera.stop()
         self._voice.stop()
         self._hand_tracker.close()

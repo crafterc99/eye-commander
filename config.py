@@ -8,6 +8,13 @@ EAR_THRESHOLD = 0.20          # Eye Aspect Ratio below this = eye closed
 EAR_CONSEC_FRAMES = 3         # Consecutive frames below threshold to confirm blink
 BLINK_COOLDOWN_MS = 500       # Minimum ms between blink-triggered clicks
 
+# --- Legacy gaze smoother (used by gaze_estimator.py) ---
+GAZE_EMA_ALPHA    = 0.15     # heavy smoothing for iris-based gaze
+GAZE_DEAD_ZONE_PX = 8        # px dead zone for iris gaze
+
+# --- GazeTracking (dlib) cursor ---
+GAZE_CURSOR_ENABLED = True   # set False to disable eye-gaze mouse movement
+
 # --- Landmark Pre-smoothing ---
 LANDMARK_EMA_ALPHA = 0.60     # Per-landmark EMA before cursor/gesture logic
 

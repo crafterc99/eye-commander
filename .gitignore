@@ -9,3 +9,5 @@ models/face_landmarker.task
 *.egg-info/
 .DS_Store
 .env
+gaze_tracking/
+dlib-*.whl
