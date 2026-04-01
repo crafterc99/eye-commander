@@ -7,35 +7,70 @@ import config
 
 class CommandDispatcher:
     def __init__(self, on_calibrate=None, on_stop=None, on_start=None, on_quit=None,
-                 on_dictate_start=None, on_dictate_stop=None):
-        self._on_calibrate     = on_calibrate
-        self._on_stop          = on_stop
-        self._on_start         = on_start
-        self._on_quit          = on_quit
+                 on_dictate_start=None, on_dictate_stop=None,
+                 on_type_start=None, on_submit=None, on_cancel=None):
+        self._on_calibrate    = on_calibrate
+        self._on_stop         = on_stop
+        self._on_start        = on_start
+        self._on_quit         = on_quit
         self._on_dictate_start = on_dictate_start
         self._on_dictate_stop  = on_dictate_stop
-        self._dictating        = False
+        self._on_type_start   = on_type_start   # begin compose mode
+        self._on_submit       = on_submit
+        self._on_cancel       = on_cancel
+        self._dictating       = False  # immediate dictation mode
+        self._composing       = False  # compose mode
+
+    def set_composing(self, val: bool):
+        """Called by main to keep dispatcher in sync with compose state."""
+        self._composing = val
+
+    def set_dictating(self, val: bool):
+        self._dictating = val
 
     def dispatch(self, phrase: str):
         phrase = phrase.strip().lower()
         print(f"[voice] '{phrase}'")
 
-        # --- Dictation toggle (always checked first) ---
-        if phrase in ("dictate", "start dictating", "dictation on"):
-            if not self._dictating:
-                self._dictating = True
-                if self._on_dictate_start:
-                    self._on_dictate_start()
+        # --- Compose mode: only submit/cancel break through ---
+        if self._composing:
+            if phrase in ("submit", "send", "enter", "done"):
+                self._composing = False
+                if self._on_submit:
+                    self._on_submit()
+            elif phrase in ("cancel", "nevermind", "never mind", "clear", "discard"):
+                self._composing = False
+                if self._on_cancel:
+                    self._on_cancel()
+            # Everything else is speech being transcribed — ignore from Vosk
             return
-        if phrase in ("stop dictating", "stop dictation", "dictation off", "end dictation"):
-            if self._dictating:
+
+        # --- Immediate dictation mode: only stop-words break through ---
+        if self._dictating:
+            if phrase in ("stop dictating", "stop dictation", "dictation off", "end dictation", "stop"):
                 self._dictating = False
                 if self._on_dictate_stop:
                     self._on_dictate_stop()
             return
 
-        # While dictating, ignore all other commands (Vosk mis-fires during speech)
-        if self._dictating:
+        # --- Compose trigger: "type" alone → compose mode ---
+        if phrase == "type":
+            self._composing = True
+            if self._on_type_start:
+                self._on_type_start()
+            return
+
+        # --- Immediate dictation trigger ---
+        if phrase in ("dictate", "start dictating", "dictation on"):
+            self._dictating = True
+            if self._on_dictate_start:
+                self._on_dictate_start()
+            return
+
+        if phrase in ("stop dictating", "stop dictation", "dictation off", "end dictation"):
+            self._dictating = False
+            if self._on_dictate_stop:
+                self._on_dictate_stop()
             return
 
         # --- App control ---
@@ -47,7 +82,7 @@ class CommandDispatcher:
             if self._on_calibrate:
                 self._on_calibrate()
             return
-        if phrase in ("stop", "pause"):
+        if phrase in ("pause"):
             if self._on_stop:
                 self._on_stop()
             return
@@ -76,7 +111,7 @@ class CommandDispatcher:
             cursor.scroll(0, dy)
             return
 
-        # --- Type text ---
+        # --- Type text inline: "type hello world" ---
         m = re.match(r"type (.+)", phrase)
         if m:
             keyboard.type_text(m.group(1))
@@ -122,4 +157,4 @@ class CommandDispatcher:
             keyboard.vscode_new_terminal()
             return
 
-        print(f"[voice] Unrecognised command: '{phrase}'")
+        print(f"[voice] Unrecognised: '{phrase}'")

@@ -79,12 +79,23 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
     # --- Top status bar ---
     cv2.rectangle(out, (0, 0), (w, 36), (5, 5, 10), -1)
     _scanline(out, 35)
-    mode_color = (_GREEN if mode == "tracking"
-                  else _RED if mode == "paused"
-                  else _CYAN if mode == "dictating"
-                  else _ORANGE)
-    cv2.putText(out, f"JARVIS  |  {mode.upper()}  |  {fps:.0f} FPS  |  {gesture}",
+    dict_status = hud_state.get("dict_status", "idle") if hud_state else "idle"
+    active_app  = hud_state.get("active_app", "") if hud_state else ""
+    mode_color  = (_GREEN  if mode == "tracking"
+                   else _RED    if mode == "paused"
+                   else _CYAN   if mode in ("active", "dictating")
+                   else _ORANGE if mode == "composing"
+                   else _WHITE)
+    app_tag = f"  [{active_app}]" if active_app else ""
+    cv2.putText(out, f"JARVIS  |  {mode.upper()}  |  {fps:.0f} FPS  |  {gesture}{app_tag}",
                 (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.52, mode_color, 1, cv2.LINE_AA)
+
+    # --- Compose buffer overlay ---
+    if hud_state:
+        compose_text = hud_state.get("compose_text", "")
+        partial_text = hud_state.get("partial_text", "")
+        if compose_text or partial_text or dict_status in ("active", "composing"):
+            _draw_dictation_overlay(out, w, h, compose_text, partial_text, dict_status)
 
     # --- Gaze minimap ---
     if screen_pos is not None:
@@ -107,7 +118,7 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
         cv2.putText(out, action, (x, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.35, _DIM, 1, cv2.LINE_AA)
         x += 110
 
-    cv2.putText(out, "SAY: 'dictate' → type freely  |  'stop dictating'  |  'click' 'copy' 'paste' 'quit'",
+    cv2.putText(out, "SAY: 'type' → compose (submit/cancel)  |  'dictate' → live  |  'click' 'copy' 'quit'",
                 (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 200, 120), 1, cv2.LINE_AA)
 
     return out
@@ -133,6 +144,36 @@ def _vignette(img):
 def _scanline(img, y):
     """Draw a subtle cyan scan line."""
     cv2.line(img, (0, y), (img.shape[1], y), (80, 60, 0), 1)
+
+
+def _draw_dictation_overlay(out, w, h, compose_text, partial_text, status):
+    """Draw a translucent compose/dictation box in the lower-centre of the frame."""
+    box_h  = 80
+    box_w  = w - 40
+    bx, by = 20, h - 76 - box_h - 8
+    # Semi-transparent background
+    overlay = out.copy()
+    cv2.rectangle(overlay, (bx, by), (bx + box_w, by + box_h), (8, 8, 20), -1)
+    cv2.addWeighted(overlay, 0.75, out, 0.25, 0, out)
+    # Border colour by status
+    border_col = _ORANGE if status == "composing" else _CYAN
+    cv2.rectangle(out, (bx, by), (bx + box_w, by + box_h), border_col, 1)
+
+    # Label
+    label = "COMPOSE — say 'submit' or 'cancel'" if status == "composing" else "DICTATING"
+    cv2.putText(out, label, (bx + 8, by + 16),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.38, border_col, 1, cv2.LINE_AA)
+
+    # Compose text (confirmed)
+    display = compose_text[-80:] if len(compose_text) > 80 else compose_text
+    cv2.putText(out, display, (bx + 8, by + 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, _WHITE, 1, cv2.LINE_AA)
+
+    # Partial (live grey)
+    if partial_text:
+        pdisp = partial_text[:60]
+        cv2.putText(out, pdisp, (bx + 8, by + 62),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, _DIM, 1, cv2.LINE_AA)
 
 
 def _draw_minimap(frame, screen_pos, sw, sh, fw, fh):

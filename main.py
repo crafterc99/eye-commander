@@ -11,10 +11,11 @@ from core.camera import Camera
 from core.hand_tracker import HandTracker
 from core.hand_cursor import HandCursor
 from core.gesture_detector import GestureDetector
+from core.app_detector import get_active_app
 from control import cursor, keyboard
 from voice.listener import VoiceListener
 from voice.commands import CommandDispatcher
-from voice.dictation import DictationEngine
+from voice.dictation import DictationManager
 from ui.overlay import StatusOverlay
 from ui.preview import draw_frame
 
@@ -34,12 +35,23 @@ def get_screen_size():
 class EyeCommander:
     def __init__(self):
         self._screen_w, self._screen_h = get_screen_size()
-        self._camera = Camera()
+        self._camera       = Camera()
         self._hand_tracker = HandTracker()
-        self._hand_cursor = HandCursor(self._screen_w, self._screen_h)
-        self._overlay   = StatusOverlay()
-        self._dictation = DictationEngine(on_status=self._dictation_status)
-        self._dictating = False
+        self._hand_cursor  = HandCursor(self._screen_w, self._screen_h)
+        self._overlay      = StatusOverlay()
+
+        # Dictation state
+        self._dictation    = DictationManager(
+            on_partial = self._on_dictation_partial,
+            on_final   = self._on_dictation_final,
+            on_status  = self._on_dictation_status,
+        )
+        self._dict_status  = "idle"   # idle | active | composing
+        self._partial_text = ""       # live partial from Wispr
+
+        # Active app (polled every ~30 frames)
+        self._active_app   = ""
+        self._app_tick     = 0
 
         self._gesture = GestureDetector(
             on_click=self._click,
@@ -53,12 +65,15 @@ class EyeCommander:
         )
 
         self._dispatcher = CommandDispatcher(
-            on_calibrate=None,
-            on_stop=self._pause_tracking,
-            on_start=self._resume_tracking,
-            on_quit=self._quit,
-            on_dictate_start=self._dictation.begin,
-            on_dictate_stop=self._dictation.end,
+            on_calibrate   = None,
+            on_stop        = self._pause_tracking,
+            on_start       = self._resume_tracking,
+            on_quit        = self._quit,
+            on_dictate_start = self._dictation.begin_immediate,
+            on_dictate_stop  = self._dictation.end,
+            on_type_start  = self._dictation.begin_compose,
+            on_submit      = self._dictation.submit,
+            on_cancel      = self._dictation.cancel,
         )
         self._voice = VoiceListener(self._dispatcher.dispatch)
 
@@ -91,9 +106,24 @@ class EyeCommander:
         from pynput.mouse import Button
         cursor.release(Button.left)
 
-    def _dictation_status(self, status):
-        self._dictating = (status == "active")
-        self._last_event = "dictating..." if self._dictating else "dictation off"
+    # --- Dictation callbacks ---
+
+    def _on_dictation_partial(self, text: str):
+        self._partial_text = text
+
+    def _on_dictation_final(self, text: str):
+        self._partial_text = ""
+        self._last_event = f"'{text[:30]}...'" if len(text) > 30 else f"'{text}'"
+
+    def _on_dictation_status(self, status: str):
+        self._dict_status = status
+        # Keep CommandDispatcher in sync
+        self._dispatcher.set_composing(status == "composing")
+        self._dispatcher.set_dictating(status == "active")
+        if status == "idle":
+            self._partial_text = ""
+
+    # --- Tracking control ---
 
     def _pause_tracking(self):
         self._hand_cursor.set_enabled(False)
@@ -117,16 +147,17 @@ class EyeCommander:
         print("=" * 60)
         print("  JARVIS  —  hand-controlled macOS")
         print()
-        print("  Point index finger  →  cursor follows")
-        print("  Pinch               →  left click")
-        print("  Pinch + hold 0.35s  →  drag")
-        print("  Peace + spread      →  right click (~100ms hold)")
-        print("  3 fingers + move    →  continuous scroll")
-        print("  Fist (hold 0.45s)   →  pause tracking")
-        print("  Open palm (8 frames)→  resume")
+        print("  Point index finger   →  cursor follows")
+        print("  Pinch                →  left click")
+        print("  Pinch + hold 0.35s   →  drag")
+        print("  Peace + spread       →  right click")
+        print("  3 fingers + move     →  continuous scroll")
+        print("  Fist (hold 0.45s)    →  pause tracking")
+        print("  Open palm (8 frames) →  resume")
         print()
-        print("  Voice: 'type ...' | 'click' | 'scroll up 3'")
-        print("         'copy' | 'paste' | 'terminal' | 'quit'")
+        print("  Voice: 'type'        →  compose mode (say, then 'submit'/'cancel')")
+        print("         'dictate'     →  live dictation (types as you speak)")
+        print("         'click' 'copy' 'paste' 'scroll up' 'quit'")
         print()
         print("  Press Q in preview window to quit")
         print("=" * 60)
@@ -169,20 +200,36 @@ class EyeCommander:
                 if self._gesture.last_gesture:
                     self._last_event = self._gesture.last_gesture
 
-                mode = "dictating" if self._dictating else ("tracking" if self._hand_cursor.enabled else "paused")
+                # Active app (every ~30 frames)
+                self._app_tick += 1
+                if self._app_tick >= 30:
+                    self._app_tick  = 0
+                    self._active_app = get_active_app()
+
+                # Mode label
+                mode = self._dict_status if self._dict_status != "idle" else (
+                    "tracking" if self._hand_cursor.enabled else "paused"
+                )
                 self._overlay.update(fps=fps, mode=mode, event=self._last_event)
 
-                # Draw Jarvis HUD
+                # Build HUD state
                 hud_state = self._gesture.get_hud_state()
+                hud_state.update({
+                    "compose_text": self._dictation.compose_text,
+                    "partial_text": self._partial_text,
+                    "active_app":   self._active_app,
+                    "dict_status":  self._dict_status,
+                })
+
                 preview = draw_frame(
                     frame, hand, mode, fps, gesture_label,
                     self._last_screen_pos, self._screen_w, self._screen_h,
-                    hud_state=hud_state
+                    hud_state=hud_state,
                 )
                 if preview is not None:
                     cv2.imshow(PREVIEW_WIN, preview)
 
-                key = cv2.waitKey(1) & 0xFF  # 1ms — keeps loop as fast as possible
+                key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     break
                 elif key == ord('p'):
