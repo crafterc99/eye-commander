@@ -14,10 +14,11 @@ class Camera:
         self._thread = None
 
     def start(self):
-        self._cap = cv2.VideoCapture(config.CAMERA_INDEX)
+        self._cap = cv2.VideoCapture(config.CAMERA_INDEX, cv2.CAP_AVFOUNDATION)
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
         self._cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # minimize buffer lag
         if not self._cap.isOpened():
             raise RuntimeError("Cannot open camera. Check camera permissions.")
         self._running = True

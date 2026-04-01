@@ -170,7 +170,7 @@ class EyeCommander:
                 if preview is not None:
                     cv2.imshow(PREVIEW_WIN, preview)
 
-                key = cv2.waitKey(1) & 0xFF
+                key = cv2.waitKey(1) & 0xFF  # 1ms — keeps loop as fast as possible
                 if key == ord('q'):
                     break
                 elif key == ord('p'):

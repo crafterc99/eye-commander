@@ -6,8 +6,8 @@ EAR_CONSEC_FRAMES = 3         # Consecutive frames below threshold to confirm bl
 BLINK_COOLDOWN_MS = 500       # Minimum ms between blink-triggered clicks
 
 # --- Gaze Smoothing ---
-GAZE_EMA_ALPHA = 0.3          # EMA weight for new sample (lower = smoother, more lag)
-GAZE_DEAD_ZONE_PX = 5         # Min pixel delta before cursor moves
+GAZE_EMA_ALPHA = 0.55         # Higher = more responsive, less smoothing (was 0.3)
+GAZE_DEAD_ZONE_PX = 2         # Smaller dead zone = more immediate response (was 5)
 
 # --- Calibration ---
 CALIBRATION_DWELL_SECS = 3.0  # Seconds to look at each calibration dot
@@ -24,7 +24,7 @@ TILT_ROLL_THRESHOLD = 20.0       # Degrees roll for tilt detection
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
-CAMERA_FPS = 30
+CAMERA_FPS = 60          # Request 60fps (camera will cap at its max)
 
 # --- Voice ---
 VOSK_MODEL_PATH = "models/vosk"
