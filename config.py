@@ -5,9 +5,41 @@ EAR_THRESHOLD = 0.20          # Eye Aspect Ratio below this = eye closed
 EAR_CONSEC_FRAMES = 3         # Consecutive frames below threshold to confirm blink
 BLINK_COOLDOWN_MS = 500       # Minimum ms between blink-triggered clicks
 
-# --- Gaze Smoothing ---
-GAZE_EMA_ALPHA = 0.55         # Higher = more responsive, less smoothing (was 0.3)
-GAZE_DEAD_ZONE_PX = 2         # Smaller dead zone = more immediate response (was 5)
+# --- Landmark Pre-smoothing ---
+LANDMARK_EMA_ALPHA = 0.60     # Per-landmark EMA before cursor/gesture logic
+
+# --- Two-stage velocity-blended cursor ---
+CURSOR_FAST_ALPHA  = 0.45
+CURSOR_SLOW_ALPHA  = 0.18
+CURSOR_VELOCITY_BLEND_SCALE = 80.0
+CURSOR_VELOCITY_BLEND_MIN   = 0.0
+CURSOR_VELOCITY_BLEND_MAX   = 0.85
+CURSOR_DEAD_ZONE_NORM = 0.0025   # Normalised ~3.6px on 1920w
+
+# --- Hand canvas (virtual region that maps to full screen) ---
+HAND_CANVAS_LEFT   = 0.15
+HAND_CANVAS_RIGHT  = 0.85
+HAND_CANVAS_TOP    = 0.10
+HAND_CANVAS_BOTTOM = 0.85
+
+# --- Pinch / drag ---
+PINCH_ENTER_THRESH  = 0.28
+PINCH_EXIT_THRESH   = 0.42
+PINCH_COOLDOWN_SECS = 0.40
+DRAG_HOLD_SECS      = 0.35
+
+# --- Fist pause ---
+FIST_ENTER_HOLD_SECS  = 0.45
+FIST_EXIT_OPEN_FRAMES = 8
+
+# --- Peace right-click ---
+PEACE_SPREAD_THRESH = 0.30
+PEACE_HOLD_FRAMES   = 6
+
+# --- Continuous scroll ---
+SCROLL_VELOCITY_SCALE = 18.0
+SCROLL_MIN_VELOCITY   = 0.004
+SCROLL_SMOOTHING      = 0.35
 
 # --- Calibration ---
 CALIBRATION_DWELL_SECS = 3.0  # Seconds to look at each calibration dot

@@ -110,11 +110,11 @@ class EyeCommander:
         print()
         print("  Point index finger  →  cursor follows")
         print("  Pinch               →  left click")
-        print("  Pinch + hold        →  drag")
-        print("  Peace sign pinch    →  right click")
-        print("  3 fingers + move    →  scroll")
-        print("  Fist (hold 0.8s)   →  pause tracking")
-        print("  Open hand           →  resume")
+        print("  Pinch + hold 0.35s  →  drag")
+        print("  Peace + spread      →  right click (~100ms hold)")
+        print("  3 fingers + move    →  continuous scroll")
+        print("  Fist (hold 0.45s)   →  pause tracking")
+        print("  Open palm (8 frames)→  resume")
         print()
         print("  Voice: 'type ...' | 'click' | 'scroll up 3'")
         print("         'copy' | 'paste' | 'terminal' | 'quit'")
@@ -163,9 +163,11 @@ class EyeCommander:
                 self._overlay.update(fps=fps, mode=mode, event=self._last_event)
 
                 # Draw Jarvis HUD
+                hud_state = self._gesture.get_hud_state()
                 preview = draw_frame(
                     frame, hand, mode, fps, gesture_label,
-                    self._last_screen_pos, self._screen_w, self._screen_h
+                    self._last_screen_pos, self._screen_w, self._screen_h,
+                    hud_state=hud_state
                 )
                 if preview is not None:
                     cv2.imshow(PREVIEW_WIN, preview)

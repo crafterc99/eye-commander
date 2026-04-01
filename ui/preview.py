@@ -15,7 +15,7 @@ _ORANGE  = (0,   160, 255)   # BGR orange
 _BG      = (10,  10,  15)
 
 
-def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w=1920, screen_h=1080):
+def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w=1920, screen_h=1080, hud_state=None):
     if frame is None:
         return None
 
@@ -57,10 +57,24 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
         cv2.circle(out, lms_m[INDEX_TIP], 9, _GREEN, 2, cv2.LINE_AA)
         cv2.circle(out, lms_m[THUMB_TIP], 8, _ORANGE, 2, cv2.LINE_AA)
 
-        # Pinch line
-        dist_sq = (lms_m[INDEX_TIP][0]-lms_m[THUMB_TIP][0])**2 + (lms_m[INDEX_TIP][1]-lms_m[THUMB_TIP][1])**2
-        pinch_color = _RED if dist_sq < 1800 else _DIM
+        # Pinch line — colour based on enter threshold
+        from core.hand_tracker import WRIST, MIDDLE_MCP as _MMCP
+        palm_sz = max(1.0, ((hand_result.landmarks_px[WRIST][0] - hand_result.landmarks_px[_MMCP][0])**2 +
+                            (hand_result.landmarks_px[WRIST][1] - hand_result.landmarks_px[_MMCP][1])**2) ** 0.5)
+        import config as _cfg
+        tip_t  = hand_result.landmarks_px[THUMB_TIP]
+        tip_i  = hand_result.landmarks_px[INDEX_TIP]
+        pd_norm = ((tip_t[0]-tip_i[0])**2 + (tip_t[1]-tip_i[1])**2)**0.5 / palm_sz
+        pinch_color = _RED if pd_norm < _cfg.PINCH_ENTER_THRESH else _DIM
         cv2.line(out, lms_m[INDEX_TIP], lms_m[THUMB_TIP], pinch_color, 1, cv2.LINE_AA)
+
+        # Fist charge arc
+        if hud_state and hud_state.get("fist_charge", 0) > 0:
+            import math
+            wrist_pt = lms_m[0]  # index 0 = WRIST
+            charge = hud_state["fist_charge"]
+            end_angle = int(-90 + charge * 360)
+            cv2.ellipse(out, wrist_pt, (22, 22), 0, -90, end_angle, _ORANGE, 3, cv2.LINE_AA)
 
     # --- Top status bar ---
     cv2.rectangle(out, (0, 0), (w, 36), (5, 5, 10), -1)
@@ -77,12 +91,12 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
     cv2.rectangle(out, (0, h - 76), (w, h), (5, 5, 10), -1)
     _scanline(out, h - 76)
     hints = [
-        ("INDEX POINT", "→ move cursor", _CYAN),
-        ("PINCH",       "→ click",       _GREEN),
-        ("PINCH HOLD",  "→ drag",        _ORANGE),
-        ("PEACE PINCH", "→ right click", _BLUE),
-        ("3 FINGERS",   "→ scroll",      _WHITE),
-        ("FIST",        "→ pause",       _RED),
+        ("INDEX POINT", "→ move cursor",  _CYAN),
+        ("PINCH",       "→ click",        _GREEN),
+        ("PINCH HOLD",  "→ drag",         _ORANGE),
+        ("PEACE SPREAD","→ right click",  _BLUE),
+        ("3 FINGERS",   "→ scroll",       _WHITE),
+        ("FIST 0.45s",  "→ pause",        _RED),
     ]
     x = 8
     for label, action, color in hints:

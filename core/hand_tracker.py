@@ -2,6 +2,7 @@
 
 import mediapipe as mp
 import numpy as np
+import config
 
 _mp_hands = mp.solutions.hands
 HAND_CONNECTIONS = _mp_hands.HAND_CONNECTIONS
@@ -18,6 +19,28 @@ FINGERTIPS  = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP]
 FINGER_MCPS = [THUMB_MCP, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
 
 
+class LandmarkSmoother:
+    """Per-landmark EMA applied before any gesture/cursor logic."""
+    def __init__(self, alpha, num_landmarks=21):
+        self._alpha = alpha
+        self._prev = None
+
+    def smooth(self, landmarks_px):
+        if self._prev is None:
+            self._prev = list(landmarks_px)
+            return self._prev
+        a = self._alpha
+        smoothed = [
+            (px * (1 - a) + rx * a, py * (1 - a) + ry * a)
+            for (px, py), (rx, ry) in zip(self._prev, landmarks_px)
+        ]
+        self._prev = smoothed
+        return smoothed
+
+    def reset(self):
+        self._prev = None
+
+
 class HandTracker:
     def __init__(self):
         self._hands = _mp_hands.Hands(
@@ -26,16 +49,19 @@ class HandTracker:
             min_detection_confidence=0.7,
             min_tracking_confidence=0.7,
         )
+        self._smoother = LandmarkSmoother(config.LANDMARK_EMA_ALPHA)
 
     def process(self, frame_bgr):
         """Returns HandResult or None."""
         rgb = frame_bgr[:, :, ::-1].copy()
         result = self._hands.process(rgb)
         if not result.multi_hand_landmarks:
+            self._smoother.reset()
             return None
         h, w = frame_bgr.shape[:2]
         lms = result.multi_hand_landmarks[0]
         landmarks_px = [(lm.x * w, lm.y * h) for lm in lms.landmark]
+        landmarks_px = self._smoother.smooth(landmarks_px)
         return HandResult(landmarks_px=landmarks_px, frame_size=(w, h))
 
     def close(self):
