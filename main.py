@@ -19,14 +19,15 @@ from ui.calibration_ui import CalibrationUI
 
 
 def get_screen_size():
-    """Get primary screen dimensions via tkinter."""
-    import tkinter as tk
-    root = tk.Tk()
-    root.withdraw()
-    w = root.winfo_screenwidth()
-    h = root.winfo_screenheight()
-    root.destroy()
-    return w, h
+    """Get primary screen dimensions via AppKit (no tkinter)."""
+    try:
+        from AppKit import NSScreen
+        screen = NSScreen.mainScreen()
+        frame = screen.frame()
+        return int(frame.size.width), int(frame.size.height)
+    except Exception:
+        # Fallback: ask OpenCV for a reasonable default
+        return 1920, 1080
 
 
 class EyeCommander:

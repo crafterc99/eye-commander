@@ -1,8 +1,7 @@
-"""Small tkinter status HUD — shows mode, FPS, last event."""
+"""Terminal-based status display — no tkinter required."""
 
-import tkinter as tk
 import threading
-import time
+import sys
 
 
 class StatusOverlay:
@@ -12,66 +11,46 @@ class StatusOverlay:
         self._last_event = ""
         self._ear_l = 0.0
         self._ear_r = 0.0
-        self._root = None
-        self._labels = {}
         self._running = False
+        self._lock = threading.Lock()
+        self._dirty = False
 
     def start(self):
-        t = threading.Thread(target=self._run_ui, daemon=True)
+        self._running = True
+        t = threading.Thread(target=self._print_loop, daemon=True)
         t.start()
 
-    def _run_ui(self):
-        self._root = tk.Tk()
-        self._root.title("eye-commander")
-        self._root.attributes("-topmost", True)
-        self._root.attributes("-alpha", 0.85)
-        self._root.configure(bg="#1a1a1a")
-        self._root.geometry("260x160+20+20")
-        self._root.resizable(False, False)
+    def _print_loop(self):
+        import time
+        while self._running:
+            time.sleep(0.5)
+            with self._lock:
+                if self._dirty:
+                    self._render()
+                    self._dirty = False
 
-        pad = {"padx": 8, "pady": 2}
-        style = {"bg": "#1a1a1a", "fg": "#f0f0f0", "font": ("Courier", 11)}
-
-        self._labels["title"] = tk.Label(self._root, text="eye-commander", bg="#1a1a1a", fg="#FFA500", font=("Courier", 12, "bold"))
-        self._labels["title"].pack(**pad)
-
-        for key, label in [("mode", "Mode: idle"), ("fps", "FPS: 0"), ("ear", "EAR: --"), ("event", "Event: --")]:
-            lbl = tk.Label(self._root, text=label, **style)
-            lbl.pack(anchor="w", **pad)
-            self._labels[key] = lbl
-
-        hint = tk.Label(self._root, text='Say "quit" to exit', bg="#1a1a1a", fg="#888888", font=("Courier", 9))
-        hint.pack(**pad)
-
-        self._running = True
-        self._root.after(200, self._refresh)
-        self._root.mainloop()
-
-    def _refresh(self):
-        if not self._running:
-            return
-        self._labels["mode"].config(text=f"Mode: {self._mode}")
-        self._labels["fps"].config(text=f"FPS: {self._fps:.1f}")
-        self._labels["ear"].config(text=f"EAR L:{self._ear_l:.2f} R:{self._ear_r:.2f}")
-        self._labels["event"].config(text=f"Event: {self._last_event}")
-        self._root.after(200, self._refresh)
+    def _render(self):
+        line = (f"\r[eye-commander] mode={self._mode:<12} "
+                f"fps={self._fps:4.1f}  "
+                f"EAR L={self._ear_l:.2f} R={self._ear_r:.2f}  "
+                f"event={self._last_event:<20}")
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
     def update(self, mode=None, fps=None, event=None, ear_l=None, ear_r=None):
-        if mode is not None:
-            self._mode = mode
-        if fps is not None:
-            self._fps = fps
-        if event is not None:
-            self._last_event = event
-        if ear_l is not None:
-            self._ear_l = ear_l
-        if ear_r is not None:
-            self._ear_r = ear_r
+        with self._lock:
+            if mode is not None:
+                self._mode = mode
+            if fps is not None:
+                self._fps = fps
+            if event is not None:
+                self._last_event = event
+            if ear_l is not None:
+                self._ear_l = ear_l
+            if ear_r is not None:
+                self._ear_r = ear_r
+            self._dirty = True
 
     def stop(self):
         self._running = False
-        if self._root:
-            try:
-                self._root.destroy()
-            except Exception:
-                pass
+        print()  # newline after status line
