@@ -33,6 +33,7 @@ try:
         def drawRect_(self, dirty_rect):
             r = self.bounds()
             rx, ry, rw, rh = r.origin.x, r.origin.y, r.size.width, r.size.height
+            cx, cy = rx + rw / 2, ry + rh / 2
 
             # Soft fill
             NSColor.colorWithRed_green_blue_alpha_(0.0, 0.70, 1.0, 0.18).setFill()
@@ -49,6 +50,23 @@ try:
             NSColor.colorWithRed_green_blue_alpha_(0.0, 0.92, 1.0, 0.88).setStroke()
             inner.setLineWidth_(1.5)
             inner.stroke()
+
+            # Dwell countdown arc — yellow → green, fills clockwise from top
+            pct = getattr(self, '_dwell_pct', 0.0)
+            if pct > 0.01:
+                r_ch = 1.0 * (1.0 - pct)          # red: 1→0
+                g_ch = 0.7 + 0.3 * pct             # green: 0.7→1.0
+                NSColor.colorWithRed_green_blue_alpha_(r_ch, g_ch, 0.0, 0.92).setStroke()
+                arc_radius = max(5.0, min(rw, rh) / 2 - 3)
+                arc = NSBezierPath.bezierPath()
+                try:
+                    arc.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
+                        (cx, cy), arc_radius, 90.0, 90.0 - pct * 360.0, True
+                    )
+                    arc.setLineWidth_(3.5)
+                    arc.stroke()
+                except Exception:
+                    pass
 
     _OBJC_OK = True
 except Exception as _e:
@@ -165,8 +183,11 @@ class GazeOverlay:
         except Exception as e:
             print(f"[gaze_overlay] Init error: {e}")
 
-    def update(self, gx: float, gy: float):
-        """Reposition the overlay to gaze point (gx, gy) in screen coords."""
+    def update(self, gx: float, gy: float, dwell_pct: float = 0.0):
+        """Reposition the overlay to gaze point (gx, gy) in screen coords.
+
+        dwell_pct: 0.0–1.0 progress of dwell-to-click countdown.
+        """
         if self._window is None:
             return
         rect = self._cache.get(gx, gy)
@@ -175,6 +196,10 @@ class GazeOverlay:
         else:
             ew, eh = _FALLBACK_W, _FALLBACK_H
             ex, ey = gx - ew / 2, gy - eh / 2
+
+        # Push dwell progress to view for arc rendering
+        if self._view is not None:
+            self._view._dwell_pct = float(dwell_pct)
 
         cocoa_y = self._screen_h - ey - eh
         try:

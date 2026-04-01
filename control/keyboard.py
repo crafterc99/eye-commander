@@ -81,3 +81,39 @@ def vscode_terminal():
 def vscode_new_terminal():
     """New terminal: Ctrl+Shift+` """
     hotkey(Key.ctrl, Key.shift, KeyCode.from_char('`'))
+
+
+def page_up():
+    press_key(Key.page_up)
+
+
+def page_down():
+    press_key(Key.page_down)
+
+
+def next_window():
+    """Cycle to next window of same app: Cmd+` """
+    hotkey(Key.cmd, KeyCode.from_char('`'))
+
+
+def prev_window():
+    """Cycle to previous window: Cmd+Shift+` """
+    hotkey(Key.cmd, Key.shift, KeyCode.from_char('`'))
+
+
+def select_all():
+    hotkey(Key.cmd, 'a')
+
+
+def find():
+    hotkey(Key.cmd, 'f')
+
+
+def scroll_to_top():
+    """Jump to top of terminal scrollback: Cmd+Up"""
+    hotkey(Key.cmd, Key.up)
+
+
+def scroll_to_bottom():
+    """Jump to bottom: Cmd+Down"""
+    hotkey(Key.cmd, Key.down)

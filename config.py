@@ -104,3 +104,14 @@ SCROLL_TICKS_DEFAULT = 3
 
 # --- Dictation (Whisper) ---
 DICTATION_VAD_ENERGY_THRESH = 500   # RMS level to consider as speech (tune per mic)
+
+# --- Gaze dwell-to-click (gaze cursor mode only) ---
+GAZE_DWELL_SECS      = 1.3   # seconds of stable gaze before click fires
+GAZE_DWELL_RADIUS_PX = 60    # gaze can wander this many px and still be "stable"
+
+# --- Gesture palm height gate ---
+# Palm Y is 0=top, 1=bottom in frame. Resting hand on desk is near bottom.
+GESTURE_MIN_PALM_Y_NORM = 0.72   # Y > this → suppress all gestures (hand is resting)
+
+# --- Pinch anti-tremor ---
+PINCH_MIN_HOLD_SECS = 0.10   # must hold pinch ≥ 100ms to register as click

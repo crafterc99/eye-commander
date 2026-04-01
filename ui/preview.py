@@ -68,13 +68,22 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
         pinch_color = _RED if pd_norm < _cfg.PINCH_ENTER_THRESH else _DIM
         cv2.line(out, lms_m[INDEX_TIP], lms_m[THUMB_TIP], pinch_color, 1, cv2.LINE_AA)
 
-        # Fist charge arc
+        # Fist charge arc (orange, around wrist)
         if hud_state and hud_state.get("fist_charge", 0) > 0:
             import math
             wrist_pt = lms_m[0]  # index 0 = WRIST
             charge = hud_state["fist_charge"]
             end_angle = int(-90 + charge * 360)
             cv2.ellipse(out, wrist_pt, (22, 22), 0, -90, end_angle, _ORANGE, 3, cv2.LINE_AA)
+
+        # Pinch charge arc (green, between index tip and thumb tip)
+        if hud_state and hud_state.get("pinch_charge", 0) > 0.05:
+            import math
+            pch = hud_state["pinch_charge"]
+            mx = (lms_m[INDEX_TIP][0] + lms_m[THUMB_TIP][0]) // 2
+            my = (lms_m[INDEX_TIP][1] + lms_m[THUMB_TIP][1]) // 2
+            end_angle = int(-90 + pch * 360)
+            cv2.ellipse(out, (mx, my), (12, 12), 0, -90, end_angle, _GREEN, 2, cv2.LINE_AA)
 
     # --- Top status bar ---
     cv2.rectangle(out, (0, 0), (w, 36), (5, 5, 10), -1)
@@ -105,7 +114,9 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
 
     # --- Gaze minimap ---
     if screen_pos is not None:
-        _draw_minimap(out, screen_pos, screen_w, screen_h, w, h)
+        _dwell = hud_state.get("dwell_progress", 0.0) if hud_state else 0.0
+        _draw_minimap(out, screen_pos, screen_w, screen_h, w, h,
+                      dwell_progress=_dwell, is_gaze=(_cs == "gaze"))
 
     # --- Bottom hint bar ---
     cv2.rectangle(out, (0, h - 76), (w, h), (5, 5, 10), -1)
@@ -124,8 +135,8 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
         cv2.putText(out, action, (x, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.35, _DIM, 1, cv2.LINE_AA)
         x += 110
 
-    cv2.putText(out, "SAY: 'type'/'dictate'  |  'eye mode'/'hand mode'  |  'calibrate gaze'  |  'click' 'copy' 'quit'",
-                (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 200, 120), 1, cv2.LINE_AA)
+    cv2.putText(out, "SAY: 'yes'/'no'  |  'next terminal'  |  'page up/down'  |  'eye mode'/'hand mode'  |  'type'/'dictate'  |  'quit'",
+                (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (120, 200, 120), 1, cv2.LINE_AA)
 
     return out
 
@@ -182,7 +193,7 @@ def _draw_dictation_overlay(out, w, h, compose_text, partial_text, status):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, _DIM, 1, cv2.LINE_AA)
 
 
-def _draw_minimap(frame, screen_pos, sw, sh, fw, fh):
+def _draw_minimap(frame, screen_pos, sw, sh, fw, fh, dwell_progress=0.0, is_gaze=False):
     mw, mh = 130, 74
     mx0, my0 = fw - mw - 8, fh - mh - 84
     # Background
@@ -193,12 +204,21 @@ def _draw_minimap(frame, screen_pos, sw, sh, fw, fh):
         cv2.line(frame, (gx, my0), (gx, my0 + mh), (30, 25, 5), 1)
     for gy in [my0 + mh//2]:
         cv2.line(frame, (mx0, gy), (mx0 + mw, gy), (30, 25, 5), 1)
-    # Gaze dot
+    # Cursor dot
     gx = int(mx0 + screen_pos[0] / sw * mw)
     gy = int(my0 + screen_pos[1] / sh * mh)
     gx = max(mx0 + 3, min(mx0 + mw - 3, gx))
     gy = max(my0 + 3, min(my0 + mh - 3, gy))
-    cv2.circle(frame, (gx, gy), 5, _CYAN, -1, cv2.LINE_AA)
-    cv2.circle(frame, (gx, gy), 8, _CYAN, 1, cv2.LINE_AA)
-    cv2.putText(frame, "CURSOR", (mx0 + 4, my0 - 5),
+    dot_color = _CYAN if not is_gaze else (255, 200, 50)   # gold tint in gaze mode
+    cv2.circle(frame, (gx, gy), 5, dot_color, -1, cv2.LINE_AA)
+    cv2.circle(frame, (gx, gy), 8, dot_color, 1, cv2.LINE_AA)
+    # Dwell countdown arc (gaze mode only: yellow → green)
+    if is_gaze and dwell_progress > 0.01:
+        r_v = int(255 * (1.0 - dwell_progress))   # 255→0
+        g_v = int(120 + 135 * dwell_progress)      # 120→255
+        arc_col = (0, g_v, r_v)                    # BGR
+        end_ang = int(-90 + dwell_progress * 360)
+        cv2.ellipse(frame, (gx, gy), (11, 11), 0, -90, end_ang, arc_col, 2, cv2.LINE_AA)
+    label = "GAZE" if is_gaze else "CURSOR"
+    cv2.putText(frame, label, (mx0 + 4, my0 - 5),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.3, _BLUE, 1, cv2.LINE_AA)

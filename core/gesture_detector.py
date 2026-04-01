@@ -55,8 +55,17 @@ class GestureDetector:
     def is_dragging(self):
         return self._pinch_state == "DRAGGING"
 
+    @property
+    def _pinch_charge_ratio(self):
+        if self._pinch_state != "CHARGING":
+            return 0.0
+        return min(1.0, (time.time() - self._pinch_start_time) / config.DRAG_HOLD_SECS)
+
     def get_hud_state(self):
-        return {"fist_charge": self._fist_charge_ratio}
+        return {
+            "fist_charge":  self._fist_charge_ratio,
+            "pinch_charge": self._pinch_charge_ratio,
+        }
 
     def update(self, hand_result):
         """Call every frame. Returns current gesture label."""
@@ -72,6 +81,13 @@ class GestureDetector:
 
         pinch_dist = _dist(tip_thumb, tip_index) / ps
         now = time.time()
+
+        # --- Palm height gate: hand resting low in frame → no gestures ---
+        fw, fh = hand_result.frame_size
+        palm_yn = hand_result.palm_center()[1] / fh
+        if palm_yn > config.GESTURE_MIN_PALM_Y_NORM:
+            self._handle_no_hand()
+            return "resting"
 
         # Priority order: fist > pinch > peace > scroll
 
@@ -123,13 +139,14 @@ class GestureDetector:
 
         elif self._pinch_state == "CHARGING":
             if pinch_dist > config.PINCH_EXIT_THRESH:
-                # Released before drag threshold — fire click if fast enough
                 held = now - self._pinch_start_time
-                if held < config.DRAG_HOLD_SECS:
+                # Anti-tremor: must hold ≥ MIN before releasing to fire click
+                if config.PINCH_MIN_HOLD_SECS <= held < config.DRAG_HOLD_SECS:
                     if now - self._last_click_time > config.PINCH_COOLDOWN_SECS:
                         self._last_click_time = now
                         self._on_click()
                         self._last_gesture = "pinch → click"
+                # held < MIN: silently cancel (tremor / accidental touch)
                 self._pinch_state = "IDLE"
             elif now - self._pinch_start_time >= config.DRAG_HOLD_SECS:
                 self._pinch_state = "DRAGGING"

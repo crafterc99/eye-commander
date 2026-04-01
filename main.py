@@ -2,6 +2,7 @@
 
 import sys
 import time
+import math
 import threading
 
 import cv2
@@ -92,6 +93,12 @@ class EyeCommander:
         self._last_screen_pos = None
         self._frame_times = []
 
+        # Dwell-to-click state (active only in gaze cursor mode)
+        self._dwell_anchor   = None   # (x, y) screen coords of stable gaze
+        self._dwell_start    = 0.0
+        self._dwell_progress = 0.0
+        self._dwell_fired_at = 0.0    # timestamp of last dwell click (cooldown)
+
     # --- Mouse actions ---
 
     def _click(self):
@@ -130,6 +137,9 @@ class EyeCommander:
         self._cursor_source = source
         self._last_event = f"cursor: {source}"
         print(f"\n[JARVIS] Cursor → {source.upper()}")
+        # Reset dwell state when switching modes
+        self._dwell_anchor   = None
+        self._dwell_progress = 0.0
 
     def _on_dictation_status(self, status: str):
         self._dict_status = status
@@ -171,15 +181,22 @@ class EyeCommander:
         print("  Fist (hold 0.45s)    →  pause tracking")
         print("  Open palm (8 frames) →  resume")
         print()
-        print("  Eye gaze             →  moves cursor (no clicks) + glow overlay")
+        print("  Eye gaze             →  moves cursor + cyan glow overlay")
         print("                          look straight ahead for 1.5s to calibrate")
+        print("                          in eye mode: hold gaze 1.3s → dwell click")
         print()
-        print("  Voice: 'type'        →  compose mode (say, then 'submit'/'cancel')")
-        print("         'dictate'     →  live dictation (types as you speak)")
-        print("         'eye mode'    →  gaze drives cursor (no clicks)")
-        print("         'hand mode'   →  hand drives cursor (default)")
+        print("  Voice: 'yes'/'approve'  →  y + Enter  (Claude Code approvals)")
+        print("         'no'/'deny'      →  Escape     (deny/cancel prompts)")
+        print("         'next terminal'  →  switch window (Cmd+`)")
+        print("         'page up/down'   →  scroll through output")
+        print("         'scroll to top'  →  Cmd+Up  (top of scrollback)")
+        print("         'scroll to bottom' → Cmd+Down")
+        print("         'eye mode'       →  gaze drives cursor (dwell to click)")
+        print("         'hand mode'      →  hand drives cursor (default)")
         print("         'calibrate gaze' →  reset gaze calibration")
-        print("         'click' 'copy' 'paste' 'scroll up' 'quit'")
+        print("         'type'           →  compose mode (say text, 'submit'/'cancel')")
+        print("         'dictate'        →  live dictation (types as you speak)")
+        print("         'click' 'copy' 'paste' 'undo' 'save' 'quit'")
         print()
         print("  Press Q in preview window to quit")
         print("=" * 60)
@@ -216,18 +233,6 @@ class EyeCommander:
                 self._gaze_cursor.submit_frame(frame)
                 gaze_pos = self._gaze_cursor.latest_pos()
 
-                # Update gaze overlay regardless of cursor source
-                if gaze_pos:
-                    gx, gy = int(gaze_pos[0]), int(gaze_pos[1])
-                    if self._gaze_overlay:
-                        self._gaze_overlay.update(gx, gy)
-                elif self._gaze_overlay:
-                    self._gaze_overlay.hide()
-
-                # Pump Cocoa run loop so overlay renders
-                if self._gaze_overlay:
-                    self._gaze_overlay.tick()
-
                 # FPS
                 now = time.time()
                 self._frame_times.append(now)
@@ -243,6 +248,46 @@ class EyeCommander:
                     if screen_pos is not None:
                         self._last_screen_pos = screen_pos
                         cursor.move(*screen_pos)
+
+                # Dwell-to-click (gaze mode only: stable gaze → click after 1.3s)
+                if self._cursor_source == "gaze" and gaze_pos is not None:
+                    gxd, gyd = gaze_pos
+                    if self._dwell_anchor is None:
+                        self._dwell_anchor   = gaze_pos
+                        self._dwell_start    = now
+                        self._dwell_progress = 0.0
+                    else:
+                        ax, ay = self._dwell_anchor
+                        if math.hypot(gxd - ax, gyd - ay) > config.GAZE_DWELL_RADIUS_PX:
+                            # Gaze moved — reset dwell
+                            self._dwell_anchor   = gaze_pos
+                            self._dwell_start    = now
+                            self._dwell_progress = 0.0
+                        else:
+                            self._dwell_progress = min(1.0, (now - self._dwell_start) / config.GAZE_DWELL_SECS)
+                            if self._dwell_progress >= 1.0 and now - self._dwell_fired_at > 2.0:
+                                cursor.left_click()
+                                self._last_event   = "dwell click"
+                                self._dwell_fired_at  = now
+                                self._dwell_anchor    = None
+                                self._dwell_progress  = 0.0
+                else:
+                    # Not in gaze mode or no gaze — clear dwell
+                    self._dwell_anchor   = None
+                    self._dwell_progress = 0.0
+
+                # Update gaze overlay (after dwell so dwell_pct is ready)
+                dpct = self._dwell_progress if self._cursor_source == "gaze" else 0.0
+                if gaze_pos:
+                    gx, gy = int(gaze_pos[0]), int(gaze_pos[1])
+                    if self._gaze_overlay:
+                        self._gaze_overlay.update(gx, gy, dpct)
+                elif self._gaze_overlay:
+                    self._gaze_overlay.hide()
+
+                # Pump Cocoa run loop so overlay renders
+                if self._gaze_overlay:
+                    self._gaze_overlay.tick()
 
                 # Gesture detection
                 gesture_label = self._gesture.update(hand)
@@ -264,11 +309,12 @@ class EyeCommander:
                 # Build HUD state
                 hud_state = self._gesture.get_hud_state()
                 hud_state.update({
-                    "compose_text":  self._dictation.compose_text,
-                    "partial_text":  self._partial_text,
-                    "active_app":    self._active_app,
-                    "dict_status":   self._dict_status,
-                    "cursor_source": self._cursor_source,
+                    "compose_text":   self._dictation.compose_text,
+                    "partial_text":   self._partial_text,
+                    "active_app":     self._active_app,
+                    "dict_status":    self._dict_status,
+                    "cursor_source":  self._cursor_source,
+                    "dwell_progress": self._dwell_progress,
                 })
 
                 preview = draw_frame(

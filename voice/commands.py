@@ -95,6 +95,17 @@ class CommandDispatcher:
                 self._on_start()
             return
 
+        # --- Claude Code / terminal approval prompts ---
+        # Maps to 'y' + Enter — works for [y/N] prompts and Claude Code tool approvals
+        if phrase in ("yes", "yeah", "yep", "yup", "approve", "allow", "accept", "confirm"):
+            keyboard.type_text("y")
+            keyboard.enter()
+            return
+        # Maps to Escape — universal cancel for prompts
+        if phrase in ("no", "nope", "deny", "reject", "decline"):
+            keyboard.escape()
+            return
+
         # --- Cursor source ---
         if phrase in ("eye mode", "eye tracking", "gaze mode", "use eyes"):
             if self._on_eye_mode:
@@ -107,6 +118,36 @@ class CommandDispatcher:
         if phrase in ("calibrate gaze", "calibrate eyes", "recalibrate"):
             if self._on_calibrate_gaze:
                 self._on_calibrate_gaze()
+            return
+
+        # --- Terminal / window navigation ---
+        if phrase in ("next terminal", "next window", "switch terminal", "switch window", "other window"):
+            keyboard.next_window()
+            return
+        if phrase in ("previous terminal", "prev terminal", "previous window", "last terminal", "last window"):
+            keyboard.prev_window()
+            return
+
+        # --- Page / scroll navigation ---
+        if phrase in ("page up",):
+            keyboard.page_up()
+            return
+        if phrase in ("page down",):
+            keyboard.page_down()
+            return
+        if phrase in ("scroll to top", "go to top", "top of page", "beginning of output"):
+            keyboard.scroll_to_top()
+            return
+        if phrase in ("scroll to bottom", "go to bottom", "bottom of page", "end of output"):
+            keyboard.scroll_to_bottom()
+            return
+
+        # --- Editing ---
+        if phrase in ("select all",):
+            keyboard.select_all()
+            return
+        if phrase in ("find", "find in file"):
+            keyboard.find()
             return
 
         # --- Mouse ---
