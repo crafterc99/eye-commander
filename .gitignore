@@ -11,3 +11,4 @@ models/face_landmarker.task
 .env
 gaze_tracking/
 dlib-*.whl
+.npm-cache/

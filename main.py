@@ -53,6 +53,8 @@ class EyeCommander:
         # Eye gaze cursor (GazeTracking)
         self._gaze_cursor  = GazeCursor(self._screen_w, self._screen_h)
         self._gaze_overlay = None          # created after cv2.namedWindow
+        # "hand" = hand drives cursor (default), "gaze" = eyes drive cursor
+        self._cursor_source = "hand"
 
         # Active app (polled every ~30 frames)
         self._active_app   = ""
@@ -79,6 +81,9 @@ class EyeCommander:
             on_type_start  = self._dictation.begin_compose,
             on_submit      = self._dictation.submit,
             on_cancel      = self._dictation.cancel,
+            on_eye_mode    = lambda: self._set_cursor_source("gaze"),
+            on_hand_mode   = lambda: self._set_cursor_source("hand"),
+            on_calibrate_gaze = self._gaze_cursor.recalibrate,
         )
         self._voice = VoiceListener(self._dispatcher.dispatch)
 
@@ -119,6 +124,12 @@ class EyeCommander:
     def _on_dictation_final(self, text: str):
         self._partial_text = ""
         self._last_event = f"'{text[:30]}...'" if len(text) > 30 else f"'{text}'"
+
+    def _set_cursor_source(self, source: str):
+        """Switch cursor between 'hand' and 'gaze'."""
+        self._cursor_source = source
+        self._last_event = f"cursor: {source}"
+        print(f"\n[JARVIS] Cursor → {source.upper()}")
 
     def _on_dictation_status(self, status: str):
         self._dict_status = status
@@ -165,6 +176,9 @@ class EyeCommander:
         print()
         print("  Voice: 'type'        →  compose mode (say, then 'submit'/'cancel')")
         print("         'dictate'     →  live dictation (types as you speak)")
+        print("         'eye mode'    →  gaze drives cursor (no clicks)")
+        print("         'hand mode'   →  hand drives cursor (default)")
+        print("         'calibrate gaze' →  reset gaze calibration")
         print("         'click' 'copy' 'paste' 'scroll up' 'quit'")
         print()
         print("  Press Q in preview window to quit")
@@ -201,10 +215,10 @@ class EyeCommander:
                 # Gaze tracking (background thread — submit frame, read latest)
                 self._gaze_cursor.submit_frame(frame)
                 gaze_pos = self._gaze_cursor.latest_pos()
-                if gaze_pos and config.GAZE_CURSOR_ENABLED:
+
+                # Update gaze overlay regardless of cursor source
+                if gaze_pos:
                     gx, gy = int(gaze_pos[0]), int(gaze_pos[1])
-                    # Move mouse to gaze position (no clicks — read-only)
-                    cursor.move(gx, gy)
                     if self._gaze_overlay:
                         self._gaze_overlay.update(gx, gy)
                 elif self._gaze_overlay:
@@ -220,11 +234,15 @@ class EyeCommander:
                 self._frame_times = [t for t in self._frame_times if now - t < 1.0]
                 fps = len(self._frame_times)
 
-                # Cursor movement
-                screen_pos = self._hand_cursor.estimate(hand)
-                if screen_pos is not None:
-                    self._last_screen_pos = screen_pos
-                    cursor.move(*screen_pos)
+                # Cursor movement — ONE source only
+                if self._cursor_source == "gaze" and gaze_pos:
+                    self._last_screen_pos = (int(gaze_pos[0]), int(gaze_pos[1]))
+                    cursor.move(*self._last_screen_pos)
+                elif self._cursor_source == "hand":
+                    screen_pos = self._hand_cursor.estimate(hand)
+                    if screen_pos is not None:
+                        self._last_screen_pos = screen_pos
+                        cursor.move(*screen_pos)
 
                 # Gesture detection
                 gesture_label = self._gesture.update(hand)
@@ -246,10 +264,11 @@ class EyeCommander:
                 # Build HUD state
                 hud_state = self._gesture.get_hud_state()
                 hud_state.update({
-                    "compose_text": self._dictation.compose_text,
-                    "partial_text": self._partial_text,
-                    "active_app":   self._active_app,
-                    "dict_status":  self._dict_status,
+                    "compose_text":  self._dictation.compose_text,
+                    "partial_text":  self._partial_text,
+                    "active_app":    self._active_app,
+                    "dict_status":   self._dict_status,
+                    "cursor_source": self._cursor_source,
                 })
 
                 preview = draw_frame(

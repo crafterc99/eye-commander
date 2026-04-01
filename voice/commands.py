@@ -8,7 +8,8 @@ import config
 class CommandDispatcher:
     def __init__(self, on_calibrate=None, on_stop=None, on_start=None, on_quit=None,
                  on_dictate_start=None, on_dictate_stop=None,
-                 on_type_start=None, on_submit=None, on_cancel=None):
+                 on_type_start=None, on_submit=None, on_cancel=None,
+                 on_eye_mode=None, on_hand_mode=None, on_calibrate_gaze=None):
         self._on_calibrate    = on_calibrate
         self._on_stop         = on_stop
         self._on_start        = on_start
@@ -18,6 +19,9 @@ class CommandDispatcher:
         self._on_type_start   = on_type_start   # begin compose mode
         self._on_submit       = on_submit
         self._on_cancel       = on_cancel
+        self._on_eye_mode     = on_eye_mode
+        self._on_hand_mode    = on_hand_mode
+        self._on_calibrate_gaze = on_calibrate_gaze
         self._dictating       = False  # immediate dictation mode
         self._composing       = False  # compose mode
 
@@ -89,6 +93,20 @@ class CommandDispatcher:
         if phrase in ("start", "resume"):
             if self._on_start:
                 self._on_start()
+            return
+
+        # --- Cursor source ---
+        if phrase in ("eye mode", "eye tracking", "gaze mode", "use eyes"):
+            if self._on_eye_mode:
+                self._on_eye_mode()
+            return
+        if phrase in ("hand mode", "hand tracking", "use hand", "use hands"):
+            if self._on_hand_mode:
+                self._on_hand_mode()
+            return
+        if phrase in ("calibrate gaze", "calibrate eyes", "recalibrate"):
+            if self._on_calibrate_gaze:
+                self._on_calibrate_gaze()
             return
 
         # --- Mouse ---

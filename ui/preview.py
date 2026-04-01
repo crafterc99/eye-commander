@@ -15,7 +15,7 @@ _ORANGE  = (0,   160, 255)   # BGR orange
 _BG      = (10,  10,  15)
 
 
-def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w=1920, screen_h=1080, hud_state=None):
+def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w=1920, screen_h=1080, hud_state=None, cursor_source="hand"):
     if frame is None:
         return None
 
@@ -81,14 +81,20 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
     _scanline(out, 35)
     dict_status = hud_state.get("dict_status", "idle") if hud_state else "idle"
     active_app  = hud_state.get("active_app", "") if hud_state else ""
+    _cs = hud_state.get("cursor_source", cursor_source) if hud_state else cursor_source
     mode_color  = (_GREEN  if mode == "tracking"
                    else _RED    if mode == "paused"
                    else _CYAN   if mode in ("active", "dictating")
                    else _ORANGE if mode == "composing"
                    else _WHITE)
+    src_label = "EYES" if _cs == "gaze" else "HAND"
+    src_color  = _CYAN if _cs == "gaze" else _GREEN
     app_tag = f"  [{active_app}]" if active_app else ""
     cv2.putText(out, f"JARVIS  |  {mode.upper()}  |  {fps:.0f} FPS  |  {gesture}{app_tag}",
                 (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.52, mode_color, 1, cv2.LINE_AA)
+    # Cursor source badge (top-right)
+    cv2.putText(out, f"CURSOR: {src_label}", (w - 115, 24),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, src_color, 1, cv2.LINE_AA)
 
     # --- Compose buffer overlay ---
     if hud_state:
@@ -118,7 +124,7 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
         cv2.putText(out, action, (x, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.35, _DIM, 1, cv2.LINE_AA)
         x += 110
 
-    cv2.putText(out, "SAY: 'type' → compose (submit/cancel)  |  'dictate' → live  |  'click' 'copy' 'quit'",
+    cv2.putText(out, "SAY: 'type'/'dictate'  |  'eye mode'/'hand mode'  |  'calibrate gaze'  |  'click' 'copy' 'quit'",
                 (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 200, 120), 1, cv2.LINE_AA)
 
     return out
