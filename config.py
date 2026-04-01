@@ -1,4 +1,7 @@
 # Tunable thresholds and configuration for eye-commander
+import os
+from dotenv import load_dotenv
+load_dotenv()  # loads .env if present
 
 # --- Blink Detection ---
 EAR_THRESHOLD = 0.20          # Eye Aspect Ratio below this = eye closed
@@ -91,3 +94,6 @@ HEAD_POSE_3D_MODEL = [
 
 # --- Scroll ---
 SCROLL_TICKS_DEFAULT = 3
+
+# --- Dictation (Whisper) ---
+DICTATION_VAD_ENERGY_THRESH = 500   # RMS level to consider as speech (tune per mic)

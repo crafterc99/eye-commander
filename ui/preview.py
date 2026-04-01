@@ -79,7 +79,10 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
     # --- Top status bar ---
     cv2.rectangle(out, (0, 0), (w, 36), (5, 5, 10), -1)
     _scanline(out, 35)
-    mode_color = _GREEN if mode == "tracking" else (_RED if mode == "paused" else _ORANGE)
+    mode_color = (_GREEN if mode == "tracking"
+                  else _RED if mode == "paused"
+                  else _CYAN if mode == "dictating"
+                  else _ORANGE)
     cv2.putText(out, f"JARVIS  |  {mode.upper()}  |  {fps:.0f} FPS  |  {gesture}",
                 (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.52, mode_color, 1, cv2.LINE_AA)
 
@@ -104,7 +107,7 @@ def draw_frame(frame, hand_result, mode, fps, gesture, screen_pos=None, screen_w
         cv2.putText(out, action, (x, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.35, _DIM, 1, cv2.LINE_AA)
         x += 110
 
-    cv2.putText(out, "SAY: 'type ...' | 'click' | 'scroll up' | 'copy' | 'quit'",
+    cv2.putText(out, "SAY: 'dictate' → type freely  |  'stop dictating'  |  'click' 'copy' 'paste' 'quit'",
                 (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 200, 120), 1, cv2.LINE_AA)
 
     return out

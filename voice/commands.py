@@ -6,15 +6,37 @@ import config
 
 
 class CommandDispatcher:
-    def __init__(self, on_calibrate=None, on_stop=None, on_start=None, on_quit=None):
-        self._on_calibrate = on_calibrate
-        self._on_stop = on_stop
-        self._on_start = on_start
-        self._on_quit = on_quit
+    def __init__(self, on_calibrate=None, on_stop=None, on_start=None, on_quit=None,
+                 on_dictate_start=None, on_dictate_stop=None):
+        self._on_calibrate     = on_calibrate
+        self._on_stop          = on_stop
+        self._on_start         = on_start
+        self._on_quit          = on_quit
+        self._on_dictate_start = on_dictate_start
+        self._on_dictate_stop  = on_dictate_stop
+        self._dictating        = False
 
     def dispatch(self, phrase: str):
         phrase = phrase.strip().lower()
         print(f"[voice] '{phrase}'")
+
+        # --- Dictation toggle (always checked first) ---
+        if phrase in ("dictate", "start dictating", "dictation on"):
+            if not self._dictating:
+                self._dictating = True
+                if self._on_dictate_start:
+                    self._on_dictate_start()
+            return
+        if phrase in ("stop dictating", "stop dictation", "dictation off", "end dictation"):
+            if self._dictating:
+                self._dictating = False
+                if self._on_dictate_stop:
+                    self._on_dictate_stop()
+            return
+
+        # While dictating, ignore all other commands (Vosk mis-fires during speech)
+        if self._dictating:
+            return
 
         # --- App control ---
         if phrase in ("quit", "exit", "stop listening"):

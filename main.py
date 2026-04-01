@@ -14,6 +14,7 @@ from core.gesture_detector import GestureDetector
 from control import cursor, keyboard
 from voice.listener import VoiceListener
 from voice.commands import CommandDispatcher
+from voice.dictation import DictationEngine
 from ui.overlay import StatusOverlay
 from ui.preview import draw_frame
 
@@ -36,7 +37,9 @@ class EyeCommander:
         self._camera = Camera()
         self._hand_tracker = HandTracker()
         self._hand_cursor = HandCursor(self._screen_w, self._screen_h)
-        self._overlay = StatusOverlay()
+        self._overlay   = StatusOverlay()
+        self._dictation = DictationEngine(on_status=self._dictation_status)
+        self._dictating = False
 
         self._gesture = GestureDetector(
             on_click=self._click,
@@ -54,6 +57,8 @@ class EyeCommander:
             on_stop=self._pause_tracking,
             on_start=self._resume_tracking,
             on_quit=self._quit,
+            on_dictate_start=self._dictation.begin,
+            on_dictate_stop=self._dictation.end,
         )
         self._voice = VoiceListener(self._dispatcher.dispatch)
 
@@ -85,6 +90,10 @@ class EyeCommander:
         self._last_event = "drag end"
         from pynput.mouse import Button
         cursor.release(Button.left)
+
+    def _dictation_status(self, status):
+        self._dictating = (status == "active")
+        self._last_event = "dictating..." if self._dictating else "dictation off"
 
     def _pause_tracking(self):
         self._hand_cursor.set_enabled(False)
@@ -125,6 +134,7 @@ class EyeCommander:
         self._overlay.start()
         self._camera.start()
         self._voice.start()
+        self._dictation.start()
         time.sleep(1.0)  # camera warm-up
 
         cv2.namedWindow(PREVIEW_WIN, cv2.WINDOW_NORMAL)
@@ -159,7 +169,7 @@ class EyeCommander:
                 if self._gesture.last_gesture:
                     self._last_event = self._gesture.last_gesture
 
-                mode = "tracking" if self._hand_cursor.enabled else "paused"
+                mode = "dictating" if self._dictating else ("tracking" if self._hand_cursor.enabled else "paused")
                 self._overlay.update(fps=fps, mode=mode, event=self._last_event)
 
                 # Draw Jarvis HUD
@@ -193,6 +203,7 @@ class EyeCommander:
         self._voice.stop()
         self._hand_tracker.close()
         self._overlay.stop()
+        self._dictation.stop()
         print("[JARVIS] Offline.")
 
 
